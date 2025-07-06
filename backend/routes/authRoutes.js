@@ -5,7 +5,9 @@ import {
   loginUser,
   verifyOtp,
   forgotPassword,
-  resendOtp
+  resendOtp,
+  resetPassword,
+  resendPassOtp
 } from "../controller/authController.js";
 
 
@@ -20,6 +22,10 @@ router.post("/verify-otp", verifyOtp)
 router.post("/forget-password", forgotPassword)
 
 router.post("/resend-otp", resendOtp)
+
+router.post("/resend-pass-otp", resendPassOtp)
+
+router.post("/reset-password", resetPassword)
 
 
 export default router;

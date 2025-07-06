@@ -18,15 +18,15 @@ const signToken = (userId) =>
 
 export const registerUser = async (req, res) => {
   try {
-    const { username, password, gmail, number, firstname, lastname } = req.body;
+    const { username, password, email, number, firstname, lastname } = req.body;
 
-    if (!username || !gmail || !number || !password) {
+    if (!username || !email || !number || !password) {
       return res.status(400).json({ msg: "Missing required fields" });
     }
-
+console.log('gmail',email)
     // check duplicates
     const exists = await User.findOne({
-      $or: [{ gmail }, { username }, { number }],
+      $or: [{ email }, { username }, { number }],
     });
 
     if (exists) {
@@ -41,7 +41,7 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       username,
-      gmail,
+      email,
       number,
       hashed_password,
       firstname,
@@ -50,13 +50,13 @@ export const registerUser = async (req, res) => {
       otpExpiry,
     });
 
-    sendOtpToEmail(gmail, otp);
+    sendOtpToEmail(email, otp);
 
     return res.status(201).json({
       msg: "SignUp Successful. Verify OTP to email.",
       userId: user._id,
     });
-  } catch (error) {
+  } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
@@ -68,12 +68,12 @@ export const registerUser = async (req, res) => {
 
 export const loginUser = async (req, res) => {
   try {
-    const { gmail, username, password } = req.body;
-    if ((!gmail && !username) || !password) {
+    const { email, username, password } = req.body;
+    if ((!email && !username) || !password) {
       return res.status(400).json({ msg: "Missing Credentials" });
     }
 
-    const user = await User.findOne(gmail ? { gmail } : { username });
+    const user = await User.findOne(email ? { email } : { username });
     if (!user) return res.status(400).json({ msg: "Invalid Credentials" });
 
     const match = await bcrypt.compare(password, user.hashed_password);
@@ -101,8 +101,10 @@ export const loginUser = async (req, res) => {
 
 export const verifyOtp = async (req, res) => {
   try {
-    const { gmail, otp } = req.body;
-    const user = await User.findOne({ gmail });
+    const { email, otp } = req.body;
+    console.log(email,otp)
+    const user = await User.findOne({ email });
+    console.log('verify-otp ka user',user)
 
     if (!user) return res.status(404).json({ msg: "User not found" });
 
@@ -154,10 +156,13 @@ export const forgotPassword = async (req, res) => {
 
 export const resendOtp = async (req, res) => {
   try {
-    const { gmail } = req.body;
-    const user = await User.findOne({ gmail });
+    const { email } = req.body;
+    console.log('gmail',email)
+    const user = await User.findOne({ email });
 
     if (!user) return res.status(404).json({ msg: "User not found" });
+    console.log('kya user verified hai',user.isVerified)
+    console.log('user kya hai',user)
     if (user.isVerified)
       return res.status(400).json({ msg: "Already verified" });
 
@@ -184,10 +189,75 @@ export const resendOtp = async (req, res) => {
     await user.save();
 
     // Send Mail
-    sendOtpToEmail(gmail, otp);
-    res.json({ msg: "OTP resent, valid for next " + OTP_EXP_MIN + " min" });
+    sendOtpToEmail(email, otp);
+    res.json({ msg: "OTP resent, valid for next " + process.env.OTP_EXP_MIN + " min" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: "Server error" });
   }
+};
+
+export const resendPassOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    // if (user.isVerified)
+    //   return res.status(400).json({ msg: "Already verified" });
+
+    // Now setting the rate limiter
+    const now = Date.now();
+    const lastSent = user.otpLastSent?.getTime() || 0;
+
+    if (now - lastSent < RESEND_GAP_SEC * 1000)
+      return res
+        .status(429)
+        .json({ msg: `Wait ${RESEND_GAP_SEC}s before retry` });
+
+    if ((user.otpResendCount || 0) >= MAX_SENDS)
+      return res.status(429).json({ msg: "Max resend attempts exceeded" });
+
+    // Generate new OTP
+    const otp = nanoid(6);
+    user.otp = otp;
+    user.otpExpiry = new Date(
+      now + +(process.env.OTP_EXP_MIN || 10) * 60 * 1000
+    );
+    user.otpLastSent = new Date(now);
+    user.otpResendCount = (user.otpResendCount || 0) + 1;
+    await user.save();
+
+    // Send Mail
+    sendOtpToEmail(email, otp);
+    res.json({ msg: "OTP resent, valid for next " + process.env.OTP_EXP_MIN + " min" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+export const resetPassword= async (req, res) => {
+  const { email, otp, password } = req.body;
+  if (!email || !otp || !password) {
+    return res.status(400).json({ message: "All fields required" });
+  }
+
+  const user = await User.findOne({ email: email });
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  if (user.resetOtp !== otp || Date.now() > user.resetOtpExpiry) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  user.password = hashedPassword;
+
+  // clear OTP
+  user.resetOtp = undefined;
+  user.resetOtpExpiry = undefined;
+
+  await user.save();
+
+  res.status(200).json({ message: "Password reset successful" });
 };

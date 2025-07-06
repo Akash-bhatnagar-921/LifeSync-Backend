@@ -6,6 +6,7 @@ import  dotenv  from "dotenv";
 import connectDB from "./config/db.js";
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
+import moodRoutes from "./routes/moodRoute.js";
 
 dotenv.config();
 const app = express();
@@ -13,10 +14,15 @@ const PORT = process.env.PORT || 3060;
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin:'http://localhost:5173',
+  credentials:true
+}));
 
 app.use('/api/auth',authRoutes)
+// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NWMxMDkyOTQ4N2QyM2QzYzZhOTdiNiIsImlhdCI6MTc1MTMwNTI5MCwiZXhwIjoxNzUxMzkxNjkwfQ.O3dQn7g7t54qxCX3cHD-I-xvIIDQAsufQZtkddm95Hs
 app.use('/api/user',userRoutes)
+app.use("/api/mood", moodRoutes);
 
 app.get("/healthCheck", (req, res) => {
   res.send("LifeSync API is live 🚀");
